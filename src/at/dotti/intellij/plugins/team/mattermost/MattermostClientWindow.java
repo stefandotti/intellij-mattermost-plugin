@@ -95,7 +95,12 @@ public class MattermostClientWindow {
 		try {
 			SettingsBean bean = ServiceManager.getService(SettingsBean.class);
 			if (bean.getUrl() != null && bean.getUsername() != null && bean.getPassword() != null) {
-				client.run(this.listModel, this.area, bean.getUsername(), bean.getPassword(), bean.getUrl());
+				try {
+					client.run(this.listModel, this.area, bean.getUsername(), bean.getPassword(), bean.getUrl());
+				} catch (Throwable e) {
+					e.printStackTrace();
+					this.list.setEmptyText("Cannot create the Client - Please check the Settings!");
+				}
 			} else {
 				this.list.setEmptyText("Please fill out the settings!");
 			}

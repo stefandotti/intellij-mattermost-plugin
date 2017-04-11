@@ -13,7 +13,7 @@ public class SettingsForm implements Configurable {
 
 	private JTextField username;
 
-	private JTextField password;
+	private JPasswordField password;
 
 	private JTextField url;
 
@@ -43,7 +43,7 @@ public class SettingsForm implements Configurable {
 	public boolean isModified() {
 		SettingsBean bean = ServiceManager.getService(SettingsBean.class);
 		boolean mod = !this.username.getText().equals(bean.getUsername());
-		mod |= !this.password.getText().equals(bean.getPassword());
+		mod |= !new String(this.password.getPassword()).equals(bean.getPassword());
 		mod |= !this.url.getText().equals(bean.getUrl());
 		return mod;
 	}
@@ -52,7 +52,11 @@ public class SettingsForm implements Configurable {
 	public void apply() throws ConfigurationException {
 		SettingsBean bean = ServiceManager.getService(SettingsBean.class);
 		bean.setUsername(username.getText());
-		bean.setPassword(password.getText());
-		bean.setUrl(url.getText());
+		bean.setPassword(new String(password.getPassword()));
+		String url = this.url.getText();
+		if (!url.startsWith("https://")) {
+			url = "https://" + url;
+		}
+		bean.setUrl(url);
 	}
 }

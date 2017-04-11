@@ -100,6 +100,13 @@ public class MattermostClient {
 		return new URI(MM_URL + apiUrl);
 	}
 
+	private URI wss(String apiUrl) throws URISyntaxException {
+		if (!MM_URL.endsWith("/")) {
+			MM_URL += "/";
+		}
+		return new URI(MM_URL.replace("https", "wss") + apiUrl);
+	}
+
 	public void users() throws IOException, URISyntaxException {
 		HttpGet req = new HttpGet(url(USERS_URL));
 		req.addHeader("Content-Type", "application/json");
@@ -253,7 +260,7 @@ public class MattermostClient {
 		SSLSocketFactory factory = sslContext.getSocketFactory();// (SSLSocketFactory) SSLSocketFactory.getDefault();
 
 		CountDownLatch connectionOpenLatch = new CountDownLatch(1);
-		WebSocketClient ws = new WebSocketClient(new URI(WEBSOCKET_URL), new Draft_17()) {
+		WebSocketClient ws = new WebSocketClient(wss(WEBSOCKET_URL), new Draft_17()) {
 			@Override
 			public void onOpen(ServerHandshake serverHandshake) {
 				System.out.println(serverHandshake.getHttpStatusMessage());

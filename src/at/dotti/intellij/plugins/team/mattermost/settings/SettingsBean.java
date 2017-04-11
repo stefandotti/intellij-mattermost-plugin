@@ -1,9 +1,18 @@
 package at.dotti.intellij.plugins.team.mattermost.settings;
 
-public class SettingsBean {
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
+import com.intellij.util.xmlb.XmlSerializerUtil;
+import org.jetbrains.annotations.Nullable;
+
+@State(name = "SettingsBean", storages = { @Storage("mattermost.xml") })
+public class SettingsBean implements PersistentStateComponent<SettingsBean> {
 
 	private String username;
+
 	private String password;
+
 	private String url;
 
 	public String getUsername() {
@@ -28,5 +37,16 @@ public class SettingsBean {
 
 	public void setUrl(String url) {
 		this.url = url;
+	}
+
+	@Nullable
+	@Override
+	public SettingsBean getState() {
+		return this;
+	}
+
+	@Override
+	public void loadState(SettingsBean settingsBean) {
+		XmlSerializerUtil.copyBean(settingsBean, this);
 	}
 }
