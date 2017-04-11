@@ -2,6 +2,7 @@ package at.dotti.intellij.plugins.team.mattermost;
 
 import at.dotti.intellij.plugins.team.mattermost.settings.SettingsBean;
 import at.dotti.mattermost.MattermostClient;
+import at.dotti.mattermost.Type;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
@@ -13,10 +14,16 @@ import com.intellij.ui.SortedListModel;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 
 import javax.swing.*;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
+import javax.swing.text.DefaultStyledDocument;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -41,7 +48,9 @@ public class MattermostClientWindow {
 
 	private SortedListModel<MMUserStatus> listModel;
 
-	private JTextArea area;
+	private JTextPane area;
+
+	private DefaultStyledDocument doc;
 
 	public MattermostClientWindow(Project project, ToolWindow toolWindow) {
 		this.project = project;
@@ -51,7 +60,7 @@ public class MattermostClientWindow {
 
 	private void initialize() {
 		SimpleToolWindowPanel contactsPanel = new SimpleToolWindowPanel(true, false);
-		JPanel p = new JPanel(new BorderLayout());
+		JBTabbedPane p = new JBTabbedPane();
 		this.listModel = new SortedListModel<>(MMUserStatus::compareTo);
 		this.list = new JBList(this.listModel);
 		this.list.setCellRenderer(new DefaultListCellRenderer() {
@@ -70,11 +79,24 @@ public class MattermostClientWindow {
 			}
 		});
 
-		this.area = new JTextArea();
-		this.area.setRows(10);
+		this.area = new JTextPane(this.doc = new DefaultStyledDocument());
+		this.area.setEditable(false);
+		this.area.addCaretListener(e -> p.setSelectedIndex(1));
 
-		p.add(new JBScrollPane(this.list), BorderLayout.CENTER);
-		p.add(new JBScrollPane(area), BorderLayout.SOUTH);
+		Style style = this.doc.addStyle(Type.FAIL.name(), null);
+		style.addAttribute(StyleConstants.Foreground, Color.RED);
+		style.addAttribute(StyleConstants.Underline, false);
+
+		style = this.doc.addStyle(Type.POSTED.name(), null);
+		style.addAttribute(StyleConstants.Foreground, Color.BLACK);
+		style.addAttribute(StyleConstants.Underline, false);
+
+		style = this.doc.addStyle(Type.STATUS_CHANGE.name(), null);
+		style.addAttribute(StyleConstants.Foreground, Color.BLUE);
+		style.addAttribute(StyleConstants.Underline, false);
+
+		p.addTab("Contacts", new JBScrollPane(this.list));
+		p.addTab("Chat", new JBScrollPane(area));
 		contactsPanel.setContent(p);
 
 		Content contacts = ContentFactory.SERVICE.getInstance().createContent(contactsPanel, "Contacts", false);

@@ -2,6 +2,7 @@ package at.dotti.mattermost;
 
 import at.dotti.intellij.plugins.team.mattermost.MMUserStatus;
 import at.dotti.intellij.plugins.team.mattermost.model.Posted;
+import at.dotti.intellij.plugins.team.mattermost.model.Typing;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -27,6 +28,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import javax.swing.*;
+import javax.swing.text.*;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -189,7 +191,7 @@ public class MattermostClient {
 
 	private int statusSeq = -1;
 
-	public void run(SortedListModel<MMUserStatus> listModel, JTextArea area, String username, String password, String url) throws IOException, URISyntaxException, CertificateException, InterruptedException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+	public void run(SortedListModel<MMUserStatus> listModel, JTextPane area, String username, String password, String url) throws IOException, URISyntaxException, CertificateException, InterruptedException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
 		MM_URL = url;
 		login(username, password);
 		users();
@@ -235,7 +237,7 @@ public class MattermostClient {
 		}
 	}
 
-	private WebSocketClient websocket(ListModel<MMUserStatus> list, JTextArea area) throws URISyntaxException, IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException, InterruptedException {
+	private WebSocketClient websocket(ListModel<MMUserStatus> list, JTextPane area) throws URISyntaxException, IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException, InterruptedException {
 		WebSocketImpl.DEBUG = false;
 
 		// load up the key store
@@ -290,11 +292,14 @@ public class MattermostClient {
 									SwingUtilities.invokeLater(() -> {
 										GsonBuilder gson = new GsonBuilder();
 										Gson json = gson.setPrettyPrinting().create();
-										area.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
-										area.append("\n");
-										area.append(json.toJson(map.get("error")));
-										area.append("\n---\n");
-										area.requestFocusInWindow();
+										DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
+										int offset = doc.getLength();
+										StringBuilder text = new StringBuilder();
+										text.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
+										text.append("\n");
+										text.append(json.toJson(map.get("error")));
+										text.append("\n---\n");
+										write(text, area, Type.FAIL);
 									});
 									break;
 							}
@@ -305,21 +310,22 @@ public class MattermostClient {
 						Map<String, Object> data = (Map<String, Object>) map.get("data");
 						Map<String, Object> broadcast = (Map<String, Object>) map.get("broadcast");
 
+						Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
 						switch (event) {
 							case "status_change":
 								SwingUtilities.invokeLater(() -> {
-									GsonBuilder gson = new GsonBuilder();
-									Gson json = gson.setPrettyPrinting().create();
-									area.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
-									area.append("\n== status change ==\n");
-									area.append(json.toJson(data));
-									area.append("\n---\n");
-									area.requestFocusInWindow();
+									StringBuilder text = new StringBuilder();
+									text.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
+									text.append("\n== status change ==\n");
+									text.append(gson.toJson(data));
+									text.append("\n---\n");
+									write(text, area, Type.STATUS_CHANGE);
 								});
 								balloonCallback.accept("status changed: " + JsonOutput.toJson(data));
 								break;
 							case "typing":
-								balloonCallback.accept("someone is typing a message... " + s);
+								Typing typing = gson.fromJson(s, Typing.class);
+								balloonCallback.accept(users.get(typing.getData().getUserId()).get("username") + " is typing a message ...");
 								break;
 							case "posted":
 								String postedString = s.replace("\\\"", "\"");
@@ -327,16 +333,16 @@ public class MattermostClient {
 								postedString = postedString.replace("]\",\"post\":\"{", "],\"post\":{");
 								postedString = postedString.replace("}\",\"sender_name", "},\"sender_name");
 								System.out.println(postedString);
-								Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
 								Posted posted = gson.fromJson(postedString, Posted.class);
 								SwingUtilities.invokeLater(() -> {
-									area.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
-									area.append("\n== posted ==\n");
-									area.append("userid = " + posted.getData().getPost().getUserId() + "\n");
-									area.append("username = " + users.get(posted.getData().getPost().getUserId()).get("username") + "\n");
-									area.append("msg = " + posted.getData().getPost().getMessage() + "\n");
-									area.append("---\n");
-									area.requestFocusInWindow();
+									StringBuilder text = new StringBuilder();
+									text.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
+									text.append("\n== posted ==\n");
+									text.append("userid = " + posted.getData().getPost().getUserId() + "\n");
+									text.append("username = " + users.get(posted.getData().getPost().getUserId()).get("username") + "\n");
+									text.append("msg = " + posted.getData().getPost().getMessage() + "\n");
+									text.append("---\n");
+									write(text, area, Type.POSTED);
 								});
 								break;
 							case "hello":
@@ -350,9 +356,11 @@ public class MattermostClient {
 				} catch (Throwable e) {
 					e.printStackTrace();
 					SwingUtilities.invokeLater(() -> {
-						area.append(s);
-						area.append("\n");
-						area.append(e.getMessage());
+						StringBuilder text = new StringBuilder();
+						text.append(s);
+						text.append("\n");
+						text.append(e.getMessage());
+						write(text, area, Type.FAIL);
 					});
 				}
 			}
@@ -376,6 +384,19 @@ public class MattermostClient {
 		wsth.start();
 		connectionOpenLatch.await();
 		return ws;
+	}
+
+	private void write(StringBuilder text, JTextPane area, Type type) {
+		DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
+		int offset = doc.getLength();
+		try {
+			doc.insertString(offset, text.toString(), null);
+		} catch (BadLocationException e) {
+			UIManager.getLookAndFeel().provideErrorFeedback(area);
+		}
+		doc.setParagraphAttributes(offset, text.length(), doc.getStyle(type.name()), true);
+		area.requestFocusInWindow();
+		area.setCaretPosition(area.getText().length());
 	}
 
 	public void setBalloonCallback(Consumer<String> balloonCallback) {
