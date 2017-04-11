@@ -1,0 +1,30 @@
+<idea-plugin>
+    <id>com.your.company.unique.plugin.id</id>
+    <name>Plugin display name here</name>
+    <version>0.0.1.0</version>
+    <vendor email="office@dotti.at" url="http://www.dotti.at">dotti.at</vendor>
+
+    <description><![CDATA[
+      This Plugins is a simple team/chat integration for a Mattermost.com application.
+    ]]></description>
+
+    <change-notes><![CDATA[
+      <ul>
+        <li>0.0.1.0: first draft, display user list with status and print messages</li>
+      </ul>
+    ]]>
+    </change-notes>
+
+    <idea-version since-build="141.0"/>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Add your extensions here -->
+        <toolWindow icon="/icons/team.png" id="Mattermost" anchor="right" canCloseContents="true"
+                    factoryClass="at.dotti.intellij.plugins.team.MattermostClientFactory"/>
+    </extensions>
+
+    <actions>
+        <!-- Add your actions here -->
+    </actions>
+
+</idea-plugin>
