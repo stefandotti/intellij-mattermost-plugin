@@ -20,7 +20,9 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- Add your extensions here -->
         <toolWindow icon="/icons/team.png" id="Mattermost" anchor="right" canCloseContents="true"
-                    factoryClass="at.dotti.intellij.plugins.team.MattermostClientFactory"/>
+                    factoryClass="at.dotti.intellij.plugins.team.mattermost.MattermostClientFactory"/>
+        <applicationService serviceImplementation="at.dotti.intellij.plugins.team.mattermost.settings.SettingsBean"/>
+        <applicationConfigurable instance="at.dotti.intellij.plugins.team.mattermost.settings.SettingsForm"/>
     </extensions>
 
     <actions>

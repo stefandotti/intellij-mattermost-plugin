@@ -1,6 +1,4 @@
-package at.dotti.intellij.plugins.team.model;
-
-import java.util.List;
+package at.dotti.intellij.plugins.team.mattermost.model;
 
 public class Posted extends Event {
 

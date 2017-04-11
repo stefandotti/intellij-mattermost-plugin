@@ -1,6 +1,8 @@
-package at.dotti.intellij.plugins.team;
+package at.dotti.intellij.plugins.team.mattermost;
 
+import at.dotti.intellij.plugins.team.mattermost.settings.SettingsBean;
 import at.dotti.mattermost.MattermostClient;
+import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.SimpleToolWindowPanel;
@@ -13,15 +15,11 @@ import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
-import org.intellij.lang.annotations.JdkConstants;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.util.function.Consumer;
 
 public class MattermostClientWindow {
 
@@ -95,7 +93,12 @@ public class MattermostClientWindow {
 			});
 		});
 		try {
-			client.run(this.listModel, this.area);
+			SettingsBean bean = ServiceManager.getService(SettingsBean.class);
+			if (bean.getUrl() != null && bean.getUsername() != null && bean.getPassword() != null) {
+				client.run(this.listModel, this.area, bean.getUsername(), bean.getPassword(), bean.getUrl());
+			} else {
+				this.list.setEmptyText("Please fill out the settings!");
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
 			this.list.setEmptyText(e.getMessage());

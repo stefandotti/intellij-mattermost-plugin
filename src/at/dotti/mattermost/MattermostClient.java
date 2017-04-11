@@ -1,15 +1,13 @@
 package at.dotti.mattermost;
 
-import at.dotti.intellij.plugins.team.MMUserStatus;
-import at.dotti.intellij.plugins.team.MattermostClientWindow;
-import at.dotti.intellij.plugins.team.model.Posted;
+import at.dotti.intellij.plugins.team.mattermost.MMUserStatus;
+import at.dotti.intellij.plugins.team.mattermost.model.Posted;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
-import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.SortedListModel;
 import groovy.json.JsonOutput;
 import org.apache.commons.io.IOUtils;
@@ -29,7 +27,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import javax.swing.*;
-import java.awt.*;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -44,23 +41,25 @@ import java.util.function.Consumer;
 
 public class MattermostClient {
 
-	private static final String MM_URL = "https://team.shark-soft.com/";
+	private String MM_URL;
 
-	private static final String USERS_LOGIN_URL = "https://team.shark-soft.com/api/v3/users/login";
+	private static final String API = "api/v3";
 
-	private static final String USERS_URL = "https://team.shark-soft.com/api/v3/users/0/100";
+	private static final String USERS_LOGIN_URL = API + "/users/login";
 
-	private static final String USERS_ID_URL = "https://team.shark-soft.com/api/v3/users/%s";
+	private static final String USERS_URL = API + "/users/0/100";
 
-	private static final String TEAMS_URL = "https://team.shark-soft.com/api/v3/users/%s/teams";
+	private static final String USERS_ID_URL = API + "/users/%s";
 
-	private static final String CHANNELS_URL = "https://team.shark-soft.com/api/v3/users/%s/teams/%s/channels";
+	private static final String TEAMS_URL = API + "/users/%s/teams";
 
-	private static final String CHANNEL_POSTS_URL = "https://team.shark-soft.com/api/v3/users/%s/channels/%s/unread";
+	private static final String CHANNELS_URL = API + "/users/%s/teams/%s/channels";
 
-	private static final String USERS_STATUS_IDS_URL = "https://team.shark-soft.com/api/v3/users/status/ids";
+	private static final String CHANNEL_POSTS_URL = API + "/users/%s/channels/%s/unread";
 
-	private static final String WEBSOCKET_URL = "wss://team.shark-soft.com/api/v3/users/websocket";
+	private static final String USERS_STATUS_IDS_URL = API + "/users/status/ids";
+
+	private static final String WEBSOCKET_URL = API + "/users/websocket";
 
 	private final CloseableHttpClient client;
 
@@ -83,7 +82,7 @@ public class MattermostClient {
 	}
 
 	public void login(String username, String password) throws IOException, URISyntaxException {
-		HttpPost req = new HttpPost(new URI(USERS_LOGIN_URL));
+		HttpPost req = new HttpPost(url(USERS_LOGIN_URL));
 		req.addHeader("Content-Type", "application/json");
 		req.setEntity(new StringEntity("{\"login_id\":\"" + username + "\",\"password\":\"" + password + "\"}"));
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -94,8 +93,15 @@ public class MattermostClient {
 		this.mattermosttoken = resp.getFirstHeader("Set-Cookie").getValue().replaceAll("(.*MMAUTHTOKEN=)([^;]+)(;.*)", "$2");
 	}
 
+	private URI url(String apiUrl) throws URISyntaxException {
+		if (!MM_URL.endsWith("/")) {
+			MM_URL += "/";
+		}
+		return new URI(MM_URL + apiUrl);
+	}
+
 	public void users() throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(new URI(USERS_URL));
+		HttpGet req = new HttpGet(url(USERS_URL));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -104,7 +110,7 @@ public class MattermostClient {
 	}
 
 	public void user() throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(new URI(String.format(USERS_ID_URL, this.user.get("id"))));
+		HttpGet req = new HttpGet(url(String.format(USERS_ID_URL, this.user.get("id"))));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -114,7 +120,7 @@ public class MattermostClient {
 	}
 
 	public ArrayList teams() throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(new URI(String.format(TEAMS_URL, this.user.get("id"))));
+		HttpGet req = new HttpGet(url(String.format(TEAMS_URL, this.user.get("id"))));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -127,7 +133,7 @@ public class MattermostClient {
 	}
 
 	public ArrayList channels(String id) throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(new URI(String.format(CHANNELS_URL, this.user.get("id"), id)));
+		HttpGet req = new HttpGet(url(String.format(CHANNELS_URL, this.user.get("id"), id)));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -141,7 +147,7 @@ public class MattermostClient {
 	}
 
 	public void userStatus() throws IOException, URISyntaxException {
-		HttpPost req = new HttpPost(new URI(USERS_STATUS_IDS_URL));
+		HttpPost req = new HttpPost(url(USERS_STATUS_IDS_URL));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		ArrayList<String> array = new ArrayList<>();
@@ -159,7 +165,7 @@ public class MattermostClient {
 	}
 
 	public Map posts(String id) throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(new URI(String.format(CHANNEL_POSTS_URL, this.user.get("id"), id)));
+		HttpGet req = new HttpGet(url(String.format(CHANNEL_POSTS_URL, this.user.get("id"), id)));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -176,8 +182,9 @@ public class MattermostClient {
 
 	private int statusSeq = -1;
 
-	public void run(SortedListModel<MMUserStatus> listModel, JTextArea area) throws IOException, URISyntaxException, CertificateException, InterruptedException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
-		login("dos", "3Und20Tausend");
+	public void run(SortedListModel<MMUserStatus> listModel, JTextArea area, String username, String password, String url) throws IOException, URISyntaxException, CertificateException, InterruptedException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+		MM_URL = url;
+		login(username, password);
 		users();
 		userStatus();
 		ws = websocket(listModel, area);

@@ -1,4 +1,4 @@
-package at.dotti.intellij.plugins.team;
+package at.dotti.intellij.plugins.team.mattermost;
 
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;

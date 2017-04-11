@@ -1,4 +1,4 @@
-package at.dotti.intellij.plugins.team.model;
+package at.dotti.intellij.plugins.team.mattermost.model;
 
 import java.util.List;
 
