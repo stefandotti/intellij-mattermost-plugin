@@ -6,13 +6,13 @@ public class Post {
 
 	private String id;
 
-	private String createAt;
+	private long createAt;
 
-	private String updateAt;
+	private long updateAt;
 
-	private int editAt;
+	private long editAt;
 
-	private int deleteAt;
+	private long deleteAt;
 
 	private String userId;
 
@@ -42,35 +42,35 @@ public class Post {
 		this.id = id;
 	}
 
-	public String getCreateAt() {
+	public long getCreateAt() {
 		return createAt;
 	}
 
-	public void setCreateAt(String createAt) {
+	public void setCreateAt(long createAt) {
 		this.createAt = createAt;
 	}
 
-	public String getUpdateAt() {
+	public long getUpdateAt() {
 		return updateAt;
 	}
 
-	public void setUpdateAt(String updateAt) {
+	public void setUpdateAt(long updateAt) {
 		this.updateAt = updateAt;
 	}
 
-	public int getEditAt() {
+	public long getEditAt() {
 		return editAt;
 	}
 
-	public void setEditAt(int editAt) {
+	public void setEditAt(long editAt) {
 		this.editAt = editAt;
 	}
 
-	public int getDeleteAt() {
+	public long getDeleteAt() {
 		return deleteAt;
 	}
 
-	public void setDeleteAt(int deleteAt) {
+	public void setDeleteAt(long deleteAt) {
 		this.deleteAt = deleteAt;
 	}
 

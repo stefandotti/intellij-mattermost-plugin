@@ -2,5 +2,5 @@ package at.dotti.mattermost;
 
 public enum Type {
 
-	FAIL, STATUS_CHANGE, POSTED
+	FAIL, STATUS_CHANGE, POSTED, POSTED_SELF
 }

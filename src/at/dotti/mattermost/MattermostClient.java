@@ -1,11 +1,11 @@
 package at.dotti.mattermost;
 
 import at.dotti.intellij.plugins.team.mattermost.MMUserStatus;
-import at.dotti.intellij.plugins.team.mattermost.model.Posted;
-import at.dotti.intellij.plugins.team.mattermost.model.Typing;
+import at.dotti.intellij.plugins.team.mattermost.model.*;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonSyntaxException;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
@@ -28,7 +28,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import javax.swing.*;
-import javax.swing.text.*;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -39,6 +38,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.Timer;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public class MattermostClient {
@@ -53,11 +53,15 @@ public class MattermostClient {
 
 	private static final String USERS_ID_URL = API + "/users/%s";
 
-	private static final String TEAMS_URL = API + "/users/%s/teams";
+	private static final String TEAMS_URL = API + "/teams/members";
 
 	private static final String CHANNELS_URL = API + "/users/%s/teams/%s/channels";
 
 	private static final String CHANNEL_POSTS_URL = API + "/users/%s/channels/%s/unread";
+
+	private static final String CHANNEL_BY_ID_URL = API + "/teams/%s/channels/%s/";
+
+	private static final String CHANNEL_MEMBERS_IDS_URL = API + "/teams/%s/channels/users/0/20";
 
 	private static final String USERS_STATUS_IDS_URL = API + "/users/status/ids";
 
@@ -67,7 +71,7 @@ public class MattermostClient {
 
 	private String token;
 
-	private Map user;
+	private User user;
 
 	private Map<String, Map<String, Object>> users;
 
@@ -79,6 +83,14 @@ public class MattermostClient {
 
 	private Consumer<String> balloonCallback;
 
+	private Consumer<String> statusCallback;
+
+	private BiConsumer<PostedData, Users> chatCallback;
+
+	private TeamMember[] teams;
+
+	private Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
+
 	public MattermostClient() {
 		client = HttpClients.createDefault();
 	}
@@ -89,10 +101,16 @@ public class MattermostClient {
 		req.setEntity(new StringEntity("{\"login_id\":\"" + username + "\",\"password\":\"" + password + "\"}"));
 		CloseableHttpResponse resp = this.client.execute(req);
 		System.out.println(resp.getEntity());
-		Gson g = new Gson();
-		this.user = g.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		this.user = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), User.class);
 		this.token = resp.getFirstHeader("Token").getValue();
 		this.mattermosttoken = resp.getFirstHeader("Set-Cookie").getValue().replaceAll("(.*MMAUTHTOKEN=)([^;]+)(;.*)", "$2");
+		status("logged on as: " + this.user.getUsername());
+	}
+
+	private void status(String s) {
+		if (this.statusCallback != null) {
+			this.statusCallback.accept(s);
+		}
 	}
 
 	private URI url(String apiUrl) throws URISyntaxException {
@@ -114,42 +132,35 @@ public class MattermostClient {
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
-		Gson g = new Gson();
-		this.users = g.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		this.users = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
 	}
 
 	public void user() throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(url(String.format(USERS_ID_URL, this.user.get("id"))));
+		HttpGet req = new HttpGet(url(String.format(USERS_ID_URL, this.user.getId())));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
-		Gson g = new Gson();
-		Map user = g.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		Map user = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
 		System.out.println(user);
 	}
 
-	public ArrayList teams() throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(url(String.format(TEAMS_URL, this.user.get("id"))));
+	public void teams() throws IOException, URISyntaxException {
+		HttpGet req = new HttpGet(url(TEAMS_URL));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
-		Gson g = new Gson();
-		ArrayList teams = g.fromJson(json, ArrayList.class);
-		System.out.println("teams");
-		teams.forEach(System.out::println);
-		return teams;
+		this.teams = gson.fromJson(json, TeamMember[].class);
 	}
 
 	public ArrayList channels(String id) throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(url(String.format(CHANNELS_URL, this.user.get("id"), id)));
+		HttpGet req = new HttpGet(url(String.format(CHANNELS_URL, this.user.getId(), id)));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 		System.out.println(json);
-		Gson g = new Gson();
-		ArrayList channels = g.fromJson(json, ArrayList.class);
+		ArrayList channels = gson.fromJson(json, ArrayList.class);
 		System.out.println("channels");
 		channels.forEach(System.out::println);
 		return channels;
@@ -169,20 +180,41 @@ public class MattermostClient {
 		CloseableHttpResponse resp = this.client.execute(req);
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 		System.out.println(json);
-		Gson g = new Gson();
-		this.status = g.fromJson(json, Map.class);
+		this.status = gson.fromJson(json, Map.class);
 	}
 
 	public Map posts(String id) throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(url(String.format(CHANNEL_POSTS_URL, this.user.get("id"), id)));
+		HttpGet req = new HttpGet(url(String.format(CHANNEL_POSTS_URL, this.user.getId(), id)));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
-		Gson g = new Gson();
-		Map posts = g.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		Map posts = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
 		System.out.println("posts");
 		System.out.println(posts);
 		return posts;
+	}
+
+	public Channel channelById(String id) throws IOException, URISyntaxException {
+		HttpGet req = new HttpGet(url(String.format(CHANNEL_BY_ID_URL, this.teams[0].getTeamId(), id)));
+		req.addHeader("Content-Type", "application/json");
+		req.addHeader("Authorization", "Bearer " + this.token);
+		CloseableHttpResponse resp = this.client.execute(req);
+		return gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Channel.class);
+	}
+
+	public Users channelMembersIds(String id) throws IOException, URISyntaxException {
+		HttpGet req = new HttpGet(url(String.format(CHANNEL_MEMBERS_IDS_URL, this.teams[0].getTeamId())));
+//		req.setEntity(new StringEntity("['"+this.user.getId()+"']"));
+		req.addHeader("Content-Type", "application/json");
+		req.addHeader("Authorization", "Bearer " + this.token);
+		CloseableHttpResponse resp = this.client.execute(req);
+		try {
+			String msg = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
+			System.out.println(msg);
+			return gson.fromJson(msg, Users.class);
+		} catch (JsonSyntaxException e) {
+			return new Users();
+		}
 	}
 
 	private WebSocketClient ws;
@@ -191,12 +223,13 @@ public class MattermostClient {
 
 	private int statusSeq = -1;
 
-	public void run(SortedListModel<MMUserStatus> listModel, JTextPane area, String username, String password, String url) throws IOException, URISyntaxException, CertificateException, InterruptedException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+	public void run(SortedListModel<MMUserStatus> listModel, String username, String password, String url) throws IOException, URISyntaxException, CertificateException, InterruptedException, UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
 		MM_URL = url;
 		login(username, password);
 		users();
+		teams();
 		userStatus();
-		ws = websocket(listModel, area);
+		ws = websocket(listModel);
 		java.util.Timer timer = new Timer();
 		timer.schedule(new TimerTask() {
 			@Override
@@ -237,7 +270,7 @@ public class MattermostClient {
 		}
 	}
 
-	private WebSocketClient websocket(ListModel<MMUserStatus> list, JTextPane area) throws URISyntaxException, IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException, InterruptedException {
+	private WebSocketClient websocket(ListModel<MMUserStatus> list) throws URISyntaxException, IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException, InterruptedException {
 		WebSocketImpl.DEBUG = false;
 
 		// load up the key store
@@ -292,14 +325,12 @@ public class MattermostClient {
 									SwingUtilities.invokeLater(() -> {
 										GsonBuilder gson = new GsonBuilder();
 										Gson json = gson.setPrettyPrinting().create();
-										DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
-										int offset = doc.getLength();
 										StringBuilder text = new StringBuilder();
 										text.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
 										text.append("\n");
 										text.append(json.toJson(map.get("error")));
 										text.append("\n---\n");
-										write(text, area, Type.FAIL);
+										status(text.toString());
 									});
 									break;
 							}
@@ -313,14 +344,6 @@ public class MattermostClient {
 						Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
 						switch (event) {
 							case "status_change":
-								SwingUtilities.invokeLater(() -> {
-									StringBuilder text = new StringBuilder();
-									text.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
-									text.append("\n== status change ==\n");
-									text.append(gson.toJson(data));
-									text.append("\n---\n");
-									write(text, area, Type.STATUS_CHANGE);
-								});
 								balloonCallback.accept("status changed: " + JsonOutput.toJson(data));
 								break;
 							case "typing":
@@ -334,16 +357,7 @@ public class MattermostClient {
 								postedString = postedString.replace("}\",\"sender_name", "},\"sender_name");
 								System.out.println(postedString);
 								Posted posted = gson.fromJson(postedString, Posted.class);
-								SwingUtilities.invokeLater(() -> {
-									StringBuilder text = new StringBuilder();
-									text.append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME));
-									text.append("\n== posted ==\n");
-									text.append("userid = " + posted.getData().getPost().getUserId() + "\n");
-									text.append("username = " + users.get(posted.getData().getPost().getUserId()).get("username") + "\n");
-									text.append("msg = " + posted.getData().getPost().getMessage() + "\n");
-									text.append("---\n");
-									write(text, area, Type.POSTED);
-								});
+								write(posted.getData(), channelMembersIds(posted.getData().getPost().getChannelId()));
 								break;
 							case "hello":
 								balloonCallback.accept("Welcome! You are connected now!");
@@ -355,13 +369,11 @@ public class MattermostClient {
 					}
 				} catch (Throwable e) {
 					e.printStackTrace();
-					SwingUtilities.invokeLater(() -> {
-						StringBuilder text = new StringBuilder();
-						text.append(s);
-						text.append("\n");
-						text.append(e.getMessage());
-						write(text, area, Type.FAIL);
-					});
+					StringBuilder text = new StringBuilder();
+					text.append(s);
+					text.append("\n");
+					text.append(e.getMessage());
+					status(text.toString());
 				}
 			}
 
@@ -386,17 +398,18 @@ public class MattermostClient {
 		return ws;
 	}
 
-	private void write(StringBuilder text, JTextPane area, Type type) {
-		DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
-		int offset = doc.getLength();
-		try {
-			doc.insertString(offset, text.toString(), null);
-		} catch (BadLocationException e) {
-			UIManager.getLookAndFeel().provideErrorFeedback(area);
+	private void write(PostedData post, Users channel) {
+		if (this.chatCallback != null) {
+			this.chatCallback.accept(post, channel);
 		}
-		doc.setParagraphAttributes(offset, text.length(), doc.getStyle(type.name()), true);
-		area.requestFocusInWindow();
-		area.setCaretPosition(area.getText().length());
+	}
+
+	public void setChatCallback(BiConsumer<PostedData, Users> chatCallback) {
+		this.chatCallback = chatCallback;
+	}
+
+	public void setStatusCallback(Consumer<String> statusCallback) {
+		this.statusCallback = statusCallback;
 	}
 
 	public void setBalloonCallback(Consumer<String> balloonCallback) {
@@ -405,5 +418,13 @@ public class MattermostClient {
 
 	public Consumer<String> getBalloonCallback() {
 		return balloonCallback;
+	}
+
+	public User getUser() {
+		return user;
+	}
+
+	public Map<String, Map<String, Object>> getUsers() {
+		return users;
 	}
 }

@@ -1,5 +1,8 @@
 package at.dotti.intellij.plugins.team.mattermost;
 
+import at.dotti.intellij.plugins.team.mattermost.model.PostedData;
+import at.dotti.intellij.plugins.team.mattermost.model.User;
+import at.dotti.intellij.plugins.team.mattermost.model.Users;
 import at.dotti.intellij.plugins.team.mattermost.settings.SettingsBean;
 import at.dotti.mattermost.MattermostClient;
 import at.dotti.mattermost.Type;
@@ -19,14 +22,19 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 
 import javax.swing.*;
-import javax.swing.event.CaretEvent;
-import javax.swing.event.CaretListener;
+import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultStyledDocument;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MattermostClientWindow {
 
@@ -48,9 +56,11 @@ public class MattermostClientWindow {
 
 	private SortedListModel<MMUserStatus> listModel;
 
-	private JTextPane area;
+	private JBLabel status;
 
-	private DefaultStyledDocument doc;
+	private JBTabbedPane jbTabbedPane;
+
+	private MattermostClient client;
 
 	public MattermostClientWindow(Project project, ToolWindow toolWindow) {
 		this.project = project;
@@ -60,7 +70,10 @@ public class MattermostClientWindow {
 
 	private void initialize() {
 		SimpleToolWindowPanel contactsPanel = new SimpleToolWindowPanel(true, false);
-		JBTabbedPane p = new JBTabbedPane();
+
+		JPanel main = new JPanel(new BorderLayout());
+
+		jbTabbedPane = new JBTabbedPane();
 		this.listModel = new SortedListModel<>(MMUserStatus::compareTo);
 		this.list = new JBList(this.listModel);
 		this.list.setCellRenderer(new DefaultListCellRenderer() {
@@ -79,25 +92,14 @@ public class MattermostClientWindow {
 			}
 		});
 
-		this.area = new JTextPane(this.doc = new DefaultStyledDocument());
-		this.area.setEditable(false);
-		this.area.addCaretListener(e -> p.setSelectedIndex(1));
+		this.status = new JBLabel("Status");
 
-		Style style = this.doc.addStyle(Type.FAIL.name(), null);
-		style.addAttribute(StyleConstants.Foreground, Color.RED);
-		style.addAttribute(StyleConstants.Underline, false);
+		jbTabbedPane.addTab("Contacts", new JBScrollPane(this.list));
 
-		style = this.doc.addStyle(Type.POSTED.name(), null);
-		style.addAttribute(StyleConstants.Foreground, Color.BLACK);
-		style.addAttribute(StyleConstants.Underline, false);
+		main.add(jbTabbedPane, BorderLayout.CENTER);
+		main.add(this.status, BorderLayout.SOUTH);
 
-		style = this.doc.addStyle(Type.STATUS_CHANGE.name(), null);
-		style.addAttribute(StyleConstants.Foreground, Color.BLUE);
-		style.addAttribute(StyleConstants.Underline, false);
-
-		p.addTab("Contacts", new JBScrollPane(this.list));
-		p.addTab("Chat", new JBScrollPane(area));
-		contactsPanel.setContent(p);
+		contactsPanel.setContent(main);
 
 		Content contacts = ContentFactory.SERVICE.getInstance().createContent(contactsPanel, "Contacts", false);
 		contacts.setCloseable(false);
@@ -108,17 +110,19 @@ public class MattermostClientWindow {
 		toolWindow.getContentManager().addContent(contacts);
 		toolWindow.getContentManager().setSelectedContent(contacts);
 
-		MattermostClient client = new MattermostClient();
+		this.client = new MattermostClient();
+		client.setStatusCallback(s -> this.status.setText(s));
 		client.setBalloonCallback(s -> {
 			SwingUtilities.invokeLater(() -> {
 				ToolWindowManager.getInstance(this.project).notifyByBalloon(ID, MessageType.INFO, s, TEAM, null);
 			});
 		});
+		client.setChatCallback(this::chat);
 		try {
 			SettingsBean bean = ServiceManager.getService(SettingsBean.class);
 			if (bean.getUrl() != null && bean.getUsername() != null && bean.getPassword() != null) {
 				try {
-					client.run(this.listModel, this.area, bean.getUsername(), bean.getPassword(), bean.getUrl());
+					client.run(this.listModel, bean.getUsername(), bean.getPassword(), bean.getUrl());
 				} catch (Throwable e) {
 					e.printStackTrace();
 					this.list.setEmptyText("Cannot create the Client - Please check the Settings!");
@@ -151,6 +155,85 @@ public class MattermostClientWindow {
 
 	public static void create(Project project, ToolWindow toolWindow) {
 		INSTANCE = new MattermostClientWindow(project, toolWindow);
+	}
+
+	private Map<String, Chat> channelIdChatMap = new HashMap<>();
+
+	private void chat(PostedData post, Users channelMembers) {
+		SwingUtilities.invokeLater(() -> {
+			StringBuilder name = new StringBuilder();
+			for (User channelMember : channelMembers.values()) {
+				String userId = channelMember.getId();
+				if (!userId.equals(client.getUser().getId())) {
+					name.append(client.getUsers().get(userId).get("username"));
+				}
+			}
+			Chat chat = this.channelIdChatMap.computeIfAbsent(post.getPost().getChannelId(), k -> new Chat());
+			if (this.jbTabbedPane.indexOfComponent(chat) == -1) {
+				this.jbTabbedPane.addTab(name.toString(), chat);
+			}
+			chat.add(post);
+		});
+	}
+
+	private class Chat extends JPanel {
+
+		private final JTextPane area;
+
+		private final DefaultStyledDocument doc;
+
+		public Chat() {
+			super(new BorderLayout());
+
+			this.area = new JTextPane(this.doc = new DefaultStyledDocument());
+			this.area.setEditable(false);
+			this.area.addCaretListener(e -> jbTabbedPane.setSelectedIndex(1));
+
+			Style style = this.doc.addStyle(Type.FAIL.name(), null);
+			style.addAttribute(StyleConstants.Foreground, Color.RED);
+			style.addAttribute(StyleConstants.Background, getBackground());
+			style.addAttribute(StyleConstants.Underline, false);
+
+			style = this.doc.addStyle(Type.POSTED_SELF.name(), null);
+			style.addAttribute(StyleConstants.Foreground, Color.BLACK);
+			style.addAttribute(StyleConstants.Background, Color.LIGHT_GRAY);
+			style.addAttribute(StyleConstants.Underline, false);
+
+			style = this.doc.addStyle(Type.POSTED.name(), null);
+			style.addAttribute(StyleConstants.Foreground, Color.BLACK);
+			style.addAttribute(StyleConstants.Background, Color.GRAY);
+			style.addAttribute(StyleConstants.Underline, false);
+
+			style = this.doc.addStyle(Type.STATUS_CHANGE.name(), null);
+			style.addAttribute(StyleConstants.Foreground, Color.BLUE);
+			style.addAttribute(StyleConstants.Background, getBackground());
+			style.addAttribute(StyleConstants.Underline, false);
+
+			this.add(new JBScrollPane(this.area), BorderLayout.CENTER);
+		}
+
+		public void add(PostedData posted) {
+			Instant i = Instant.ofEpochMilli(posted.getPost().getCreateAt());
+			LocalDateTime createdAt = LocalDateTime.from(i.atZone(ZoneId.of("Europe/Vienna")));
+			StringBuilder text = new StringBuilder();
+			text.append(client.getUsers().get(posted.getPost().getUserId()).get("username")).append(" ");
+			text.append(createdAt.format(DateTimeFormatter.ISO_TIME)).append("\n");
+			text.append(posted.getPost().getMessage()).append("\n---\n");
+			write(text, this.area, client.getUser().getId().equals(posted.getPost().getUserId()) ? Type.POSTED_SELF : Type.POSTED);
+		}
+
+		private void write(StringBuilder text, JTextPane area, Type type) {
+			DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
+			int offset = doc.getLength();
+			try {
+				doc.insertString(offset, text.toString(), null);
+			} catch (BadLocationException e) {
+				UIManager.getLookAndFeel().provideErrorFeedback(area);
+			}
+			doc.setParagraphAttributes(offset, text.length(), doc.getStyle(type.name()), true);
+			area.requestFocusInWindow();
+			area.setCaretPosition(area.getText().length() - 1);
+		}
 	}
 
 }
