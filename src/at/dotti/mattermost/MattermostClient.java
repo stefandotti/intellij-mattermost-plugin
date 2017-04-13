@@ -373,7 +373,7 @@ public class MattermostClient {
 					text.append(s);
 					text.append("\n");
 					text.append(e.getMessage());
-					status(text.toString());
+					Notifications.Bus.notify(new Notification("team", text.toString(), s, NotificationType.INFORMATION));
 				}
 			}
 

@@ -58,8 +58,6 @@ public class MattermostClientWindow {
 
 	private JBLabel status;
 
-	private JBTabbedPane jbTabbedPane;
-
 	private MattermostClient client;
 
 	public MattermostClientWindow(Project project, ToolWindow toolWindow) {
@@ -73,7 +71,6 @@ public class MattermostClientWindow {
 
 		JPanel main = new JPanel(new BorderLayout());
 
-		jbTabbedPane = new JBTabbedPane();
 		this.listModel = new SortedListModel<>(MMUserStatus::compareTo);
 		this.list = new JBList(this.listModel);
 		this.list.setCellRenderer(new DefaultListCellRenderer() {
@@ -94,9 +91,7 @@ public class MattermostClientWindow {
 
 		this.status = new JBLabel("Status");
 
-		jbTabbedPane.addTab("Contacts", new JBScrollPane(this.list));
-
-		main.add(jbTabbedPane, BorderLayout.CENTER);
+		main.add(new JBScrollPane(this.list), BorderLayout.CENTER);
 		main.add(this.status, BorderLayout.SOUTH);
 
 		contactsPanel.setContent(main);
@@ -161,16 +156,24 @@ public class MattermostClientWindow {
 
 	private void chat(PostedData post, Users channelMembers) {
 		SwingUtilities.invokeLater(() -> {
-			StringBuilder name = new StringBuilder();
-			for (User channelMember : channelMembers.values()) {
-				String userId = channelMember.getId();
-				if (!userId.equals(client.getUser().getId())) {
-					name.append(client.getUsers().get(userId).get("username"));
+			String name = "dummy";
+			if (post.getChannelType().equals("D")) {
+				String leftUserID = post.getChannelName().substring(0, post.getChannelName().indexOf("__"));
+				String rightUserID = post.getChannelName().substring(post.getChannelName().indexOf("__") + 2);
+				if (!leftUserID.equals(client.getUser().getId())) {
+					name = (String) client.getUsers().get(leftUserID).get("username");
+				} else {
+					name = (String) client.getUsers().get(rightUserID).get("username");
 				}
+			} else {
+				name = post.getChannelDisplayName();
 			}
 			Chat chat = this.channelIdChatMap.computeIfAbsent(post.getPost().getChannelId(), k -> new Chat());
-			if (this.jbTabbedPane.indexOfComponent(chat) == -1) {
-				this.jbTabbedPane.addTab(name.toString(), chat);
+			if (this.toolWindow.getContentManager().getContent(chat) == null) {
+				Content messages = ContentFactory.SERVICE.getInstance().createContent(chat, name, false);
+				messages.setIcon(TEAM);
+				this.toolWindow.getContentManager().addContent(messages);
+				this.toolWindow.getContentManager().setSelectedContent(messages);
 			}
 			chat.add(post);
 		});
@@ -187,7 +190,10 @@ public class MattermostClientWindow {
 
 			this.area = new JTextPane(this.doc = new DefaultStyledDocument());
 			this.area.setEditable(false);
-			this.area.addCaretListener(e -> jbTabbedPane.setSelectedIndex(1));
+			this.area.addCaretListener(e -> {
+				Content c = toolWindow.getContentManager().getContent(this);
+				toolWindow.getContentManager().setSelectedContent(c);
+			});
 
 			Style style = this.doc.addStyle(Type.FAIL.name(), null);
 			style.addAttribute(StyleConstants.Foreground, Color.RED);
