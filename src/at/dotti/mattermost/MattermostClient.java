@@ -12,6 +12,7 @@ import com.intellij.notification.Notifications;
 import com.intellij.ui.SortedListModel;
 import groovy.json.JsonOutput;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
@@ -27,7 +28,9 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
+import javax.sound.midi.Soundbank;
 import javax.swing.*;
+import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -55,7 +58,7 @@ public class MattermostClient {
 
 	private static final String TEAMS_URL = API + "/teams/members";
 
-	private static final String CHANNELS_URL = API + "/users/%s/teams/%s/channels";
+	private static final String CHANNELS_URL = API + "/teams/%s/channels/";
 
 	private static final String CHANNEL_POSTS_URL = API + "/users/%s/channels/%s/unread";
 
@@ -66,6 +69,10 @@ public class MattermostClient {
 	private static final String USERS_STATUS_IDS_URL = API + "/users/status/ids";
 
 	private static final String WEBSOCKET_URL = API + "/users/websocket";
+
+	private static final String CREATE_POST_URL = API + "/teams/%s/channels/%s/posts/create";
+
+	private static final String VIEW_CHANNEL = API + "/teams/%s/channels/view";
 
 	private final CloseableHttpClient client;
 
@@ -153,17 +160,14 @@ public class MattermostClient {
 		this.teams = gson.fromJson(json, TeamMember[].class);
 	}
 
-	public ArrayList channels(String id) throws IOException, URISyntaxException {
-		HttpGet req = new HttpGet(url(String.format(CHANNELS_URL, this.user.getId(), id)));
+	public Channels channels() throws IOException, URISyntaxException {
+		HttpGet req = new HttpGet(url(String.format(CHANNELS_URL, this.teams[0].getTeamId())));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 		System.out.println(json);
-		ArrayList channels = gson.fromJson(json, ArrayList.class);
-		System.out.println("channels");
-		channels.forEach(System.out::println);
-		return channels;
+		return gson.fromJson(json, Channels.class);
 	}
 
 	public void userStatus() throws IOException, URISyntaxException {
@@ -318,7 +322,8 @@ public class MattermostClient {
 							switch (status) {
 								case "OK":
 									if (map.containsKey("data")) {
-										fillListModel((Map<String, String>) map.get("data"));
+										userStatus();
+										fillListModel(MattermostClient.this.status);
 									}
 									break;
 								case "FAIL":
@@ -398,6 +403,23 @@ public class MattermostClient {
 		return ws;
 	}
 
+	public Post compose(String text, String channelId) throws IOException, URISyntaxException {
+		Post post = new Post();
+		post.setMessage(StringEscapeUtils.escapeHtml(text));
+		post.setChannelId(channelId);
+		post.setUserId(this.user.getId());
+		return createPost(post);
+	}
+
+	public Post createPost(Post post) throws IOException, URISyntaxException {
+		HttpPost req = new HttpPost(url(String.format(CREATE_POST_URL, this.teams[0].getTeamId(), post.getChannelId())));
+		req.addHeader("Content-Type", "application/json");
+		req.addHeader("Authorization", "Bearer " + this.token);
+		req.setEntity(new StringEntity(gson.toJson(post)));
+		CloseableHttpResponse resp = this.client.execute(req);
+		return gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Post.class);
+	}
+
 	private void write(PostedData post, Users channel) {
 		if (this.chatCallback != null) {
 			this.chatCallback.accept(post, channel);
@@ -426,5 +448,27 @@ public class MattermostClient {
 
 	public Map<String, Map<String, Object>> getUsers() {
 		return users;
+	}
+
+	public Map view(String channelId) throws URISyntaxException, IOException {
+		HttpPost req = new HttpPost(url(String.format(VIEW_CHANNEL, this.teams[0].getTeamId())));
+		req.addHeader("Content-Type", "application/json");
+		req.addHeader("Authorization", "Bearer " + this.token);
+		Map<String, String> map = new HashMap<>();
+		map.put("channel_id", channelId);
+		map.put("prev_channel_id", "");
+		req.setEntity(new StringEntity(gson.toJson(map)));
+		CloseableHttpResponse resp = this.client.execute(req);
+		return gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+	}
+
+	public Channel.ChannelData createChat(String s) throws IOException, URISyntaxException {
+		Channels channels = channels();
+		Optional<Channel.ChannelData> channel = channels.stream().filter(o -> o.getName().endsWith(s)).findFirst();
+		if (channel != null && channel.isPresent()) {
+			// found
+			return channel.get();
+		}
+		return null;
 	}
 }

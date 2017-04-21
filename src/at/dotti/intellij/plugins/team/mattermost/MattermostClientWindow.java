@@ -1,11 +1,14 @@
 package at.dotti.intellij.plugins.team.mattermost;
 
+import at.dotti.intellij.plugins.team.mattermost.model.Channel;
 import at.dotti.intellij.plugins.team.mattermost.model.PostedData;
-import at.dotti.intellij.plugins.team.mattermost.model.User;
 import at.dotti.intellij.plugins.team.mattermost.model.Users;
 import at.dotti.intellij.plugins.team.mattermost.settings.SettingsBean;
 import at.dotti.mattermost.MattermostClient;
 import at.dotti.mattermost.Type;
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationType;
+import com.intellij.notification.Notifications;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
@@ -13,13 +16,15 @@ import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.SortedListModel;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
-import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import emoji4j.EmojiUtils;
+import org.apache.commons.lang.StringEscapeUtils;
 
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
@@ -27,14 +32,15 @@ import javax.swing.text.DefaultStyledDocument;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.Timer;
 
 public class MattermostClientWindow {
 
@@ -73,6 +79,7 @@ public class MattermostClientWindow {
 
 		this.listModel = new SortedListModel<>(MMUserStatus::compareTo);
 		this.list = new JBList(this.listModel);
+		this.list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		this.list.setCellRenderer(new DefaultListCellRenderer() {
 			@Override
 			public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
@@ -86,6 +93,21 @@ public class MattermostClientWindow {
 					label.setIcon(((MMUserStatus) value).online() ? ONLINE : OFFLINE);
 				}
 				return label;
+			}
+		});
+		this.list.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				if (e.getClickCount() >= 2) {
+					if (!list.isSelectionEmpty()) {
+						MMUserStatus user = listModel.get(list.locationToIndex(e.getPoint()));
+						try {
+							createChat(user);
+						} catch (IOException | URISyntaxException e1) {
+							Notifications.Bus.notify(new Notification("team", e1.getMessage(), e1.getMessage(), NotificationType.ERROR));
+						}
+					}
+				}
 			}
 		});
 
@@ -148,6 +170,25 @@ public class MattermostClientWindow {
 
 	}
 
+	private void createChat(MMUserStatus user) throws IOException, URISyntaxException {
+		Channel.ChannelData channel = client.createChat(user.userId());
+		SwingUtilities.invokeLater(() -> {
+			String name = user.username();
+			Chat chat = this.channelIdChatMap.computeIfAbsent(channel.getId(), k -> new Chat());
+			chat.channelId = channel.getId();
+			if (this.toolWindow.getContentManager().getContent(chat) == null) {
+				Content messages = ContentFactory.SERVICE.getInstance().createContent(chat, name, false);
+				messages.setIcon(TEAM);
+				this.toolWindow.getContentManager().addContent(messages);
+				this.toolWindow.getContentManager().setSelectedContent(messages);
+			} else {
+				Content c = this.toolWindow.getContentManager().getContent(chat);
+				this.toolWindow.getContentManager().setSelectedContent(c);
+			}
+			SwingUtilities.invokeLater(chat.inputArea::grabFocus);
+		});
+	}
+
 	public static void create(Project project, ToolWindow toolWindow) {
 		INSTANCE = new MattermostClientWindow(project, toolWindow);
 	}
@@ -185,10 +226,52 @@ public class MattermostClientWindow {
 
 		private final DefaultStyledDocument doc;
 
+		private final JTextPane inputArea;
+
+		private boolean emojiSupported = false;
+
+		private Timer t;
+
+		private Color origColor;
+
+		private String latestPostUserId;
+
+		private String channelId;
+
 		public Chat() {
 			super(new BorderLayout());
 
+			String fontFamily = "Courier";
+			Font uiFont = getFont();
+			Font[] fonts = GraphicsEnvironment.getLocalGraphicsEnvironment().getAllFonts();
+			for (Font font : fonts) {
+				// search for a font that can display emoji
+				if (font.canDisplay('\u23F0')) {
+					fontFamily = font.getFontName();
+					uiFont = font;
+					emojiSupported = true;
+				}
+			}
+
+			this.inputArea = new JTextPane();
+			this.inputArea.addKeyListener(new KeyAdapter() {
+				@Override
+				public void keyPressed(KeyEvent e) {
+					if (!e.isShiftDown() && e.getKeyCode() == KeyEvent.VK_ENTER) {
+						try {
+							e.consume();
+							send();
+							inputArea.setText("");
+						} catch (IOException | URISyntaxException e1) {
+							Notifications.Bus.notify(new Notification("team", e1.getMessage(), e1.getMessage(), NotificationType.ERROR));
+						}
+					}
+				}
+			});
+
 			this.area = new JTextPane(this.doc = new DefaultStyledDocument());
+			//			this.area.setFont(uiFont);
+			this.area.setOpaque(true);
 			this.area.setEditable(false);
 			this.area.addCaretListener(e -> {
 				Content c = toolWindow.getContentManager().getContent(this);
@@ -201,13 +284,16 @@ public class MattermostClientWindow {
 			style.addAttribute(StyleConstants.Underline, false);
 
 			style = this.doc.addStyle(Type.POSTED_SELF.name(), null);
+			style.addAttribute(StyleConstants.Italic, true);
 			style.addAttribute(StyleConstants.Foreground, Color.BLACK);
 			style.addAttribute(StyleConstants.Background, Color.LIGHT_GRAY);
 			style.addAttribute(StyleConstants.Underline, false);
 
 			style = this.doc.addStyle(Type.POSTED.name(), null);
-			style.addAttribute(StyleConstants.Foreground, Color.BLACK);
-			style.addAttribute(StyleConstants.Background, Color.GRAY);
+			style.addAttribute(StyleConstants.Italic, false);
+			style.addAttribute(StyleConstants.Bold, true);
+			style.addAttribute(StyleConstants.Foreground, Color.black);
+			style.addAttribute(StyleConstants.Background, Color.green);
 			style.addAttribute(StyleConstants.Underline, false);
 
 			style = this.doc.addStyle(Type.STATUS_CHANGE.name(), null);
@@ -216,29 +302,84 @@ public class MattermostClientWindow {
 			style.addAttribute(StyleConstants.Underline, false);
 
 			this.add(new JBScrollPane(this.area), BorderLayout.CENTER);
+			this.add(new JBScrollPane(this.inputArea), BorderLayout.SOUTH);
+
+			this.area.addFocusListener(new FocusAdapter() {
+				@Override
+				public void focusGained(FocusEvent e) {
+					try {
+						System.out.println(client.view(channelId));
+					} catch (URISyntaxException | IOException e1) {
+						Notifications.Bus.notify(new Notification("team", e1.getMessage(), e1.getMessage(), NotificationType.ERROR));
+					}
+				}
+			});
+			this.inputArea.addFocusListener(new FocusAdapter() {
+				@Override
+				public void focusGained(FocusEvent e) {
+					try {
+						System.out.println(client.view(channelId));
+					} catch (URISyntaxException | IOException e1) {
+						Notifications.Bus.notify(new Notification("team", e1.getMessage(), e1.getMessage(), NotificationType.ERROR));
+					}
+				}
+			});
+
+		}
+
+		private void send() throws IOException, URISyntaxException {
+			client.compose(this.inputArea.getText(), this.channelId);
 		}
 
 		public void add(PostedData posted) {
+			this.channelId = posted.getPost().getChannelId();
 			Instant i = Instant.ofEpochMilli(posted.getPost().getCreateAt());
 			LocalDateTime createdAt = LocalDateTime.from(i.atZone(ZoneId.of("Europe/Vienna")));
 			StringBuilder text = new StringBuilder();
-			text.append(client.getUsers().get(posted.getPost().getUserId()).get("username")).append(" ");
-			text.append(createdAt.format(DateTimeFormatter.ISO_TIME)).append("\n");
-			text.append(posted.getPost().getMessage()).append("\n---\n");
-			write(text, this.area, client.getUser().getId().equals(posted.getPost().getUserId()) ? Type.POSTED_SELF : Type.POSTED);
+			boolean out = client.getUser().getId().equals(posted.getPost().getUserId());
+			if (this.latestPostUserId == null || !this.latestPostUserId.equals(posted.getPost().getUserId())) {
+				text.append(out ? "< " : "> ").append(createdAt.format(DateTimeFormatter.ISO_LOCAL_TIME));
+				text.append(" ").append(client.getUsers().get(posted.getPost().getUserId()).get("username")).append(": ");
+			}
+			text.append(EmojiUtils.emojify(StringEscapeUtils.unescapeHtml(StringEscapeUtils.unescapeJava(posted.getPost().getMessage()))).replace("\n", "\n" + (out ? "< " : "> "))).append("\n");
+			write(text, this.area, out ? Type.POSTED_SELF : Type.POSTED);
+			this.latestPostUserId = posted.getPost().getUserId();
 		}
 
 		private void write(StringBuilder text, JTextPane area, Type type) {
-			DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
-			int offset = doc.getLength();
-			try {
-				doc.insertString(offset, text.toString(), null);
-			} catch (BadLocationException e) {
-				UIManager.getLookAndFeel().provideErrorFeedback(area);
-			}
-			doc.setParagraphAttributes(offset, text.length(), doc.getStyle(type.name()), true);
-			area.requestFocusInWindow();
-			area.setCaretPosition(area.getText().length() - 1);
+			SwingUtilities.invokeLater(() -> {
+				DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
+				int offset = doc.getLength();
+				try {
+					doc.insertString(offset, text.toString(), null);
+				} catch (BadLocationException e) {
+					UIManager.getLookAndFeel().provideErrorFeedback(area);
+				}
+				doc.setParagraphAttributes(offset, text.length(), doc.getStyle(type.name()), true);
+				//				area.requestFocusInWindow();
+				SwingUtilities.invokeLater(() -> {
+					area.setCaretPosition(area.getText().length() - 1);
+					try {
+						area.scrollRectToVisible(area.modelToView(area.getCaretPosition()));
+					} catch (BadLocationException e) {
+					}
+
+				});
+
+				if (this.origColor == null) {
+					this.origColor = area.getBackground();
+				}
+				area.setBackground(JBColor.ORANGE);
+				if (t == null) {
+					t = new Timer("highlight-timer", true);
+				}
+				t.schedule(new TimerTask() {
+					@Override
+					public void run() {
+						SwingUtilities.invokeLater(() -> area.setBackground(origColor));
+					}
+				}, 5000);
+			});
 		}
 	}
 
