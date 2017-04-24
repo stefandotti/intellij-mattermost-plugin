@@ -16,6 +16,7 @@ import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.ColorUtil;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SortedListModel;
 import com.intellij.ui.components.JBLabel;
@@ -25,12 +26,10 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import emoji4j.EmojiUtils;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang.StringUtils;
 
 import javax.swing.*;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultStyledDocument;
-import javax.swing.text.Style;
-import javax.swing.text.StyleConstants;
+import javax.swing.text.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.IOException;
@@ -39,8 +38,10 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Timer;
+import java.util.TimerTask;
 
 public class MattermostClientWindow {
 
@@ -269,36 +270,30 @@ public class MattermostClientWindow {
 				}
 			});
 
-			this.area = new JTextPane(this.doc = new DefaultStyledDocument());
+			StyleContext ctx = new StyleContext();
+			this.area = new JTextPane(this.doc = new DefaultStyledDocument(ctx));
 			//			this.area.setFont(uiFont);
-			this.area.setOpaque(true);
+			this.area.setContentType("text/plain;charset=utf-8");
 			this.area.setEditable(false);
 			this.area.addCaretListener(e -> {
 				Content c = toolWindow.getContentManager().getContent(this);
 				toolWindow.getContentManager().setSelectedContent(c);
 			});
 
-			Style style = this.doc.addStyle(Type.FAIL.name(), null);
-			style.addAttribute(StyleConstants.Foreground, Color.RED);
-			style.addAttribute(StyleConstants.Background, getBackground());
+			Style style = ctx.addStyle(Type.FAIL.name(), null);
+			style.addAttribute(StyleConstants.Foreground, JBColor.RED);
 			style.addAttribute(StyleConstants.Underline, false);
 
-			style = this.doc.addStyle(Type.POSTED_SELF.name(), null);
-			style.addAttribute(StyleConstants.Italic, true);
-			style.addAttribute(StyleConstants.Foreground, Color.BLACK);
-			style.addAttribute(StyleConstants.Background, Color.LIGHT_GRAY);
+			style = ctx.addStyle(Type.POSTED_SELF.name(), null);
+			style.addAttribute(StyleConstants.Foreground, new JBColor(ColorUtil.fromHex("3d5f4f"), ColorUtil.fromHex("CCF9FF")));
 			style.addAttribute(StyleConstants.Underline, false);
 
-			style = this.doc.addStyle(Type.POSTED.name(), null);
-			style.addAttribute(StyleConstants.Italic, false);
-			style.addAttribute(StyleConstants.Bold, true);
-			style.addAttribute(StyleConstants.Foreground, Color.black);
-			style.addAttribute(StyleConstants.Background, Color.green);
+			style = ctx.addStyle(Type.POSTED.name(), null);
+			style.addAttribute(StyleConstants.Foreground, getForeground());
 			style.addAttribute(StyleConstants.Underline, false);
 
-			style = this.doc.addStyle(Type.STATUS_CHANGE.name(), null);
-			style.addAttribute(StyleConstants.Foreground, Color.BLUE);
-			style.addAttribute(StyleConstants.Background, getBackground());
+			style = ctx.addStyle(Type.STATUS_CHANGE.name(), null);
+			style.addAttribute(StyleConstants.Foreground, JBColor.BLUE);
 			style.addAttribute(StyleConstants.Underline, false);
 
 			this.add(new JBScrollPane(this.area), BorderLayout.CENTER);
@@ -338,7 +333,7 @@ public class MattermostClientWindow {
 			StringBuilder text = new StringBuilder();
 			boolean out = client.getUser().getId().equals(posted.getPost().getUserId());
 			if (this.latestPostUserId == null || !this.latestPostUserId.equals(posted.getPost().getUserId())) {
-				text.append(out ? "< " : "> ").append(createdAt.format(DateTimeFormatter.ISO_LOCAL_TIME));
+				text.append(out ? "< " : "> ").append(StringUtils.rightPad(createdAt.format(DateTimeFormatter.ISO_LOCAL_TIME), 12, "0"));
 				text.append(" ").append(client.getUsers().get(posted.getPost().getUserId()).get("username")).append(": ");
 			}
 			text.append(EmojiUtils.emojify(StringEscapeUtils.unescapeHtml(StringEscapeUtils.unescapeJava(posted.getPost().getMessage()))).replace("\n", "\n" + (out ? "< " : "> "))).append("\n");
@@ -356,9 +351,8 @@ public class MattermostClientWindow {
 					UIManager.getLookAndFeel().provideErrorFeedback(area);
 				}
 				doc.setParagraphAttributes(offset, text.length(), doc.getStyle(type.name()), true);
-				//				area.requestFocusInWindow();
 				SwingUtilities.invokeLater(() -> {
-					area.setCaretPosition(area.getText().length() - 1);
+					area.setCaretPosition(doc.getLength() - 1);
 					try {
 						area.scrollRectToVisible(area.modelToView(area.getCaretPosition()));
 					} catch (BadLocationException e) {
