@@ -1,15 +1,16 @@
 <idea-plugin>
-    <id>com.your.company.unique.plugin.id</id>
-    <name>Plugin display name here</name>
-    <version>0.0.1.0</version>
+    <id>at.dotti.intellij.plugins.team.mattermost</id>
+    <name>Mattermost Chat Plugin</name>
+    <version>0.0.2.0</version>
     <vendor email="office@dotti.at" url="http://www.dotti.at">dotti.at</vendor>
 
     <description><![CDATA[
-      This Plugins is a simple team/chat integration for a Mattermost.com application.
+      This Plugins is a simple team/chat integration for a Mattermost.com application. This plugin is still under development and there are a lot of features that can be implemented. For now you can chat on single user channels.
     ]]></description>
 
     <change-notes><![CDATA[
       <ul>
+        <li>0.0.2.0: compose posts, display emoji</li>
         <li>0.0.1.0: first draft, display user list with status and print messages</li>
       </ul>
     ]]>
