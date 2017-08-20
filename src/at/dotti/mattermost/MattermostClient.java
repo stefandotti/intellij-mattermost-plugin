@@ -18,7 +18,9 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultClientConnectionReuseStrategy;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.java_websocket.WebSocketImpl;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft_17;
@@ -28,9 +30,7 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
-import javax.sound.midi.Soundbank;
 import javax.swing.*;
-import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -99,7 +99,15 @@ public class MattermostClient {
 	private Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
 
 	public MattermostClient() {
-		client = HttpClients.createDefault();
+		final PoolingHttpClientConnectionManager connManager = new PoolingHttpClientConnectionManager();
+		connManager.setDefaultMaxPerRoute(5);
+		connManager.setMaxTotal(5);
+
+		client = HttpClients.custom()
+				.setConnectionManager(connManager)
+				.setConnectionManagerShared(true)
+				.setConnectionReuseStrategy(DefaultClientConnectionReuseStrategy.INSTANCE)
+				.build();
 	}
 
 	public void login(String username, String password) throws IOException, URISyntaxException {
@@ -131,7 +139,10 @@ public class MattermostClient {
 		if (!MM_URL.endsWith("/")) {
 			MM_URL += "/";
 		}
-		return new URI(MM_URL.replace("https", "wss") + apiUrl);
+		final String wsUrl = MM_URL.startsWith("https")
+				? MM_URL.replace("https", "wss")
+				: MM_URL.replace("http", "ws");
+		return new URI(wsUrl + apiUrl);
 	}
 
 	public void users() throws IOException, URISyntaxException {
@@ -140,6 +151,7 @@ public class MattermostClient {
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
 		this.users = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		resp.close();
 	}
 
 	public void user() throws IOException, URISyntaxException {
@@ -149,6 +161,7 @@ public class MattermostClient {
 		CloseableHttpResponse resp = this.client.execute(req);
 		Map user = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
 		System.out.println(user);
+		resp.close();
 	}
 
 	public void teams() throws IOException, URISyntaxException {
@@ -158,6 +171,7 @@ public class MattermostClient {
 		CloseableHttpResponse resp = this.client.execute(req);
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 		this.teams = gson.fromJson(json, TeamMember[].class);
+		resp.close();
 	}
 
 	public Channels channels() throws IOException, URISyntaxException {
@@ -167,7 +181,9 @@ public class MattermostClient {
 		CloseableHttpResponse resp = this.client.execute(req);
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 		System.out.println(json);
-		return gson.fromJson(json, Channels.class);
+		final Channels channelData = gson.fromJson(json, Channels.class);
+		resp.close();
+		return channelData;
 	}
 
 	public void userStatus() throws IOException, URISyntaxException {
@@ -185,6 +201,7 @@ public class MattermostClient {
 		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 		System.out.println(json);
 		this.status = gson.fromJson(json, Map.class);
+		resp.close();
 	}
 
 	public Map posts(String id) throws IOException, URISyntaxException {
@@ -195,6 +212,7 @@ public class MattermostClient {
 		Map posts = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
 		System.out.println("posts");
 		System.out.println(posts);
+		resp.close();
 		return posts;
 	}
 
@@ -203,7 +221,9 @@ public class MattermostClient {
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
-		return gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Channel.class);
+		final Channel channel = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Channel.class);
+		resp.close();
+		return channel;
 	}
 
 	public Users channelMembersIds(String id) throws IOException, URISyntaxException {
@@ -215,6 +235,7 @@ public class MattermostClient {
 		try {
 			String msg = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
 			System.out.println(msg);
+			resp.close();
 			return gson.fromJson(msg, Users.class);
 		} catch (JsonSyntaxException e) {
 			return new Users();
@@ -276,27 +297,6 @@ public class MattermostClient {
 
 	private WebSocketClient websocket(ListModel<MMUserStatus> list) throws URISyntaxException, IOException, KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableKeyException, KeyManagementException, InterruptedException {
 		WebSocketImpl.DEBUG = false;
-
-		// load up the key store
-		String STORETYPE = "JKS";
-		String KEYSTORE = "keystore.jks";
-		String STOREPASSWORD = "storepassword";
-		String KEYPASSWORD = "keypassword";
-
-		KeyStore ks = KeyStore.getInstance(STORETYPE);
-		ks.load(MattermostClient.class.getResourceAsStream(KEYSTORE), STOREPASSWORD.toCharArray());
-
-		KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-		kmf.init(ks, KEYPASSWORD.toCharArray());
-		TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
-		tmf.init(ks);
-
-		SSLContext sslContext = null;
-		sslContext = SSLContext.getInstance("TLS");
-		//		sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
-		sslContext.init(null, null, null); // will use java's default key and trust store which is sufficient unless you deal with self-signed certificates
-
-		SSLSocketFactory factory = sslContext.getSocketFactory();// (SSLSocketFactory) SSLSocketFactory.getDefault();
 
 		CountDownLatch connectionOpenLatch = new CountDownLatch(1);
 		WebSocketClient ws = new WebSocketClient(wss(WEBSOCKET_URL), new Draft_17()) {
@@ -360,12 +360,14 @@ public class MattermostClient {
 								postedString = postedString.replace("mentions\":\"", "mentions\":");
 								postedString = postedString.replace("]\",\"post\":\"{", "],\"post\":{");
 								postedString = postedString.replace("}\",\"sender_name", "},\"sender_name");
-								System.out.println(postedString);
 								Posted posted = gson.fromJson(postedString, Posted.class);
 								write(posted.getData(), channelMembersIds(posted.getData().getPost().getChannelId()));
 								break;
 							case "hello":
 								balloonCallback.accept("Welcome! You are connected now!");
+								break;
+							case "channel_viewed":
+								Notifications.Bus.notify(new Notification("team", event, s, NotificationType.INFORMATION));
 								break;
 							default:
 								System.out.println("msg: " + s);
@@ -390,17 +392,46 @@ public class MattermostClient {
 			@Override
 			public void onError(Exception e) {
 				e.printStackTrace();
+				Notifications.Bus.notify(new Notification("team", "Mattermost Connection error", e.getMessage(), NotificationType.INFORMATION));
 				connectionOpenLatch.countDown();
 			}
 
 		};
-		ws.setSocket(factory.createSocket());
+
+		if (MM_URL.startsWith("https")) {
+			SSLSocketFactory factory = createSslSocketFactory();
+			ws.setSocket(factory.createSocket());
+		}
+
 		Thread wsth = new Thread(ws);
 		wsth.setName("WebsocketReadThread");
 		wsth.setDaemon(true);
 		wsth.start();
 		connectionOpenLatch.await();
 		return ws;
+	}
+
+	private SSLSocketFactory createSslSocketFactory() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, UnrecoverableKeyException, KeyManagementException {
+		// load up the key store
+		String STORETYPE = "JKS";
+		String KEYSTORE = "keystore.jks";
+		String STOREPASSWORD = "storepassword";
+		String KEYPASSWORD = "keypassword";
+
+		KeyStore ks = KeyStore.getInstance(STORETYPE);
+		ks.load(MattermostClient.class.getResourceAsStream(KEYSTORE), STOREPASSWORD.toCharArray());
+
+		KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+		kmf.init(ks, KEYPASSWORD.toCharArray());
+		TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+		tmf.init(ks);
+
+		SSLContext sslContext = null;
+		sslContext = SSLContext.getInstance("TLS");
+		//		sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+		sslContext.init(null, null, null); // will use java's default key and trust store which is sufficient unless you deal with self-signed certificates
+
+		return sslContext.getSocketFactory();// (SSLSocketFactory) SSLSocketFactory.getDefault();
 	}
 
 	public Post compose(String text, String channelId) throws IOException, URISyntaxException {
@@ -417,7 +448,9 @@ public class MattermostClient {
 		req.addHeader("Authorization", "Bearer " + this.token);
 		req.setEntity(new StringEntity(gson.toJson(post)));
 		CloseableHttpResponse resp = this.client.execute(req);
-		return gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Post.class);
+		final Post json = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Post.class);
+		resp.close();
+		return json;
 	}
 
 	private void write(PostedData post, Users channel) {
@@ -459,7 +492,9 @@ public class MattermostClient {
 		map.put("prev_channel_id", "");
 		req.setEntity(new StringEntity(gson.toJson(map)));
 		CloseableHttpResponse resp = this.client.execute(req);
-		return gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		final Map json = gson.fromJson(IOUtils.toString(resp.getEntity().getContent(), "UTF-8"), Map.class);
+		resp.close();
+		return json;
 	}
 
 	public Channel.ChannelData createChat(String s) throws IOException, URISyntaxException {
