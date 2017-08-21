@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>at.dotti.intellij.plugins.team.mattermost</id>
     <name>Mattermost Chat Plugin</name>
-    <version>0.0.2.0</version>
+    <version>0.1.0.0</version>
     <vendor email="office@dotti.at" url="http://www.dotti.at">dotti.at</vendor>
 
     <description><![CDATA[
@@ -10,6 +10,13 @@
 
     <change-notes><![CDATA[
       <ul>
+        <li>0.1.0.0: create direct channel when none was found, first change to api v4, set v3 as deprecated</li>
+        <li>0.0.4.4: make slack attachment more prominent with utf8 box character</li>
+        <li>0.0.4.3: more info messages on the websocket</li>
+        <li>0.0.4.2: fixed: npe</li>
+        <li>0.0.4.1: fixed: websockets are not reusable</li>
+        <li>0.0.4.0: reconnect websocket on connection loss, catch any exception in timer thread</li>
+        <li>0.0.3.0: print slack attachments</li>
         <li>0.0.2.0: compose posts, display emoji</li>
         <li>0.0.1.0: first draft, display user list with status and print messages</li>
       </ul>

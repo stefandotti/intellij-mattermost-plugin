@@ -9,6 +9,7 @@ import com.google.gson.JsonSyntaxException;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
+import com.intellij.ui.NotificationBalloonShadowBorderProvider;
 import com.intellij.ui.SortedListModel;
 import groovy.json.JsonOutput;
 import org.apache.commons.io.IOUtils;
@@ -48,7 +49,13 @@ public class MattermostClient {
 
 	private String MM_URL;
 
+	/**
+	 * @deprecated use v4 instead
+	 */
+	@Deprecated
 	private static final String API = "api/v3";
+
+	private static final String API_V4 = "api/v4";
 
 	private static final String USERS_LOGIN_URL = API + "/users/login";
 
@@ -59,6 +66,8 @@ public class MattermostClient {
 	private static final String TEAMS_URL = API + "/teams/members";
 
 	private static final String CHANNELS_URL = API + "/teams/%s/channels/";
+
+	private static final String CHANNEL_CREATE_URL = API_V4 + "/channels/direct";
 
 	private static final String CHANNEL_POSTS_URL = API + "/users/%s/channels/%s/unread";
 
@@ -160,6 +169,21 @@ public class MattermostClient {
 		this.teams = gson.fromJson(json, TeamMember[].class);
 	}
 
+	private Channel.ChannelData createChannel(String s) throws URISyntaxException, IOException {
+		HttpPost req = new HttpPost(url(String.format(CHANNEL_CREATE_URL, this.teams[0].getTeamId())));
+		req.addHeader("Content-Type", "application/json");
+		req.addHeader("Authorization", "Bearer " + this.token);
+		List<String> ids = new ArrayList<>();
+		ids.add(this.user.getId());
+		ids.add(s);
+		Gson jsonReq = new Gson();
+		req.setEntity(new StringEntity(jsonReq.toJson(ids)));
+		CloseableHttpResponse resp = this.client.execute(req);
+		String json = IOUtils.toString(resp.getEntity().getContent(), "UTF-8");
+		System.out.println(json);
+		return gson.fromJson(json, Channel.ChannelData.class);
+	}
+
 	public Channels channels() throws IOException, URISyntaxException {
 		HttpGet req = new HttpGet(url(String.format(CHANNELS_URL, this.teams[0].getTeamId())));
 		req.addHeader("Content-Type", "application/json");
@@ -208,7 +232,7 @@ public class MattermostClient {
 
 	public Users channelMembersIds(String id) throws IOException, URISyntaxException {
 		HttpGet req = new HttpGet(url(String.format(CHANNEL_MEMBERS_IDS_URL, this.teams[0].getTeamId())));
-//		req.setEntity(new StringEntity("['"+this.user.getId()+"']"));
+		//		req.setEntity(new StringEntity("['"+this.user.getId()+"']"));
 		req.addHeader("Content-Type", "application/json");
 		req.addHeader("Authorization", "Bearer " + this.token);
 		CloseableHttpResponse resp = this.client.execute(req);
@@ -238,8 +262,17 @@ public class MattermostClient {
 		timer.schedule(new TimerTask() {
 			@Override
 			public void run() {
-				ws.send("{\"action\":\"get_statuses\",\"seq\":" + (++seq) + "}");
-				statusSeq = seq;
+				try {
+					if (ws == null || ws.isClosed()) {
+						Notifications.Bus.notify(new Notification("team", "mattermost websocket", "websocket reconnecting...", NotificationType.INFORMATION));
+						ws = websocket(listModel);
+					}
+					ws.send("{\"action\":\"get_statuses\",\"seq\":" + (++seq) + "}");
+					statusSeq = seq;
+				} catch (Throwable t) {
+					t.printStackTrace();
+					Notifications.Bus.notify(new Notification("team", "mattermost Error", t.getMessage(), NotificationType.ERROR));
+				}
 			}
 		}, 5000, 60000);
 		this.listModel = listModel;
@@ -307,7 +340,12 @@ public class MattermostClient {
 
 				String json = "{\"seq\":1,\"action\":\"authentication_challenge\",\"data\":{\"token\":\"" + mattermosttoken + "\"}}";
 				send(json);
+			}
 
+			@Override
+			public void onClosing(int i, String reason, boolean remote) {
+				Notifications.Bus.notify(new Notification("team", "mattermost closing", "mattermost closing: code = " + i + ", reason = " + reason + ", remote = " + remote, NotificationType.INFORMATION));
+				System.out.println("closing: code = " + i + ", reason = " + reason + ", remote = " + remote);
 			}
 
 			@Override
@@ -369,7 +407,7 @@ public class MattermostClient {
 								break;
 							default:
 								System.out.println("msg: " + s);
-								Notifications.Bus.notify(new Notification("team", event, s, NotificationType.INFORMATION));
+								Notifications.Bus.notify(new Notification("mattermost", event, s, NotificationType.INFORMATION));
 						}
 					}
 				} catch (Throwable e) {
@@ -378,7 +416,7 @@ public class MattermostClient {
 					text.append(s);
 					text.append("\n");
 					text.append(e.getMessage());
-					Notifications.Bus.notify(new Notification("team", text.toString(), s, NotificationType.INFORMATION));
+					Notifications.Bus.notify(new Notification("mattermost", text.toString(), s, NotificationType.INFORMATION));
 				}
 			}
 
@@ -469,6 +507,7 @@ public class MattermostClient {
 			// found
 			return channel.get();
 		}
-		return null;
+		return createChannel(s);
 	}
+
 }

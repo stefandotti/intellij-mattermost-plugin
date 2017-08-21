@@ -173,6 +173,10 @@ public class MattermostClientWindow {
 
 	private void createChat(MMUserStatus user) throws IOException, URISyntaxException {
 		Channel.ChannelData channel = client.createChat(user.userId());
+		if (channel == null) {
+			Notifications.Bus.notify(new Notification("mattermost", "channel error", "no channel found for " + user.username(), NotificationType.ERROR));
+			return;
+		}
 		SwingUtilities.invokeLater(() -> {
 			String name = user.username();
 			Chat chat = this.channelIdChatMap.computeIfAbsent(channel.getId(), k -> new Chat());
@@ -337,6 +341,23 @@ public class MattermostClientWindow {
 				text.append(" ").append(client.getUsers().get(posted.getPost().getUserId()).get("username")).append(": ");
 			}
 			text.append(EmojiUtils.emojify(StringEscapeUtils.unescapeHtml(StringEscapeUtils.unescapeJava(posted.getPost().getMessage()))).replace("\n", "\n" + (out ? "< " : "> "))).append("\n");
+
+			if (posted.getPost().getType().equals("slack_attachment")) {
+				Object att = posted.getPost().getProps().get("attachments");
+				System.out.println(att);
+				if (att instanceof java.util.List) {
+					java.util.List attList = (java.util.List) att;
+					for (Object o : attList) {
+						if (o instanceof Map) {
+							Map attMap = (Map) o;
+							text.append("\u250F\n");
+							text.append("\u2503 ").append(((String) attMap.get("fallback")).replace("\\n", "\n\u2503 "));
+							text.append("\n\u2517");
+						}
+					}
+				}
+			}
+
 			write(text, this.area, out ? Type.POSTED_SELF : Type.POSTED);
 			this.latestPostUserId = posted.getPost().getUserId();
 		}
