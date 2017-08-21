@@ -15,6 +15,8 @@ public class SettingsBean implements PersistentStateComponent<SettingsBean> {
 
 	private String url;
 
+	private String scheme;
+
 	public String getUsername() {
 		return username;
 	}
@@ -37,6 +39,14 @@ public class SettingsBean implements PersistentStateComponent<SettingsBean> {
 
 	public void setUrl(String url) {
 		this.url = url;
+	}
+
+	public String getScheme() {
+		return scheme;
+	}
+
+	public void setScheme(String scheme) {
+		this.scheme = scheme;
 	}
 
 	@Nullable
