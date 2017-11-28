@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>at.dotti.intellij.plugins.team.mattermost</id>
     <name>Mattermost Chat Plugin</name>
-    <version>0.1.2.0</version>
+    <version>0.1.3.0</version>
     <vendor email="office@dotti.at" url="http://www.dotti.at">dotti.at</vendor>
 
     <description><![CDATA[
@@ -10,6 +10,7 @@
 
     <change-notes><![CDATA[
       <ul>
+        <li>0.1.3.0: support for slack colors</li>
         <li>0.1.2.0: recognize more slack, fixed processing of string post data</li>
         <li>0.1.1.0: setting for http/https</li>
         <li>0.1.0.0: create direct channel when none was found, first change to api v4, set v3 as deprecated</li>
