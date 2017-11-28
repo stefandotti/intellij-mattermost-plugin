@@ -351,7 +351,11 @@ public class MattermostClientWindow {
 						if (o instanceof Map) {
 							Map attMap = (Map) o;
 							text.append("\u250F\n");
-							text.append("\u2503 ").append(((String) attMap.get("fallback")).replace("\\n", "\n\u2503 "));
+							if (attMap.containsKey("text")) {
+                                text.append("\u2503 ").append(((String) attMap.get("text")).replace("\\n", "\n\u2503 "));
+                            } else {
+                                text.append("\u2503 ").append(((String) attMap.get("fallback")).replace("\\n", "\n\u2503 "));
+                            }
 							text.append("\n\u2517");
 						}
 					}
