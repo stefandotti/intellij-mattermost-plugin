@@ -297,8 +297,20 @@ public class MattermostClientWindow {
 			style.addAttribute(StyleConstants.Underline, false);
 
 			style = ctx.addStyle(Type.STATUS_CHANGE.name(), null);
-			style.addAttribute(StyleConstants.Foreground, JBColor.BLUE);
+			style.addAttribute(StyleConstants.Foreground, JBColor.BLUE.darker());
 			style.addAttribute(StyleConstants.Underline, false);
+
+            style = ctx.addStyle(Type.GOOD.name(), null);
+            style.addAttribute(StyleConstants.Foreground, JBColor.GREEN.darker());
+            style.addAttribute(StyleConstants.Underline, false);
+
+            style = ctx.addStyle(Type.WARNING.name(), null);
+            style.addAttribute(StyleConstants.Foreground, JBColor.ORANGE);
+            style.addAttribute(StyleConstants.Underline, false);
+
+            style = ctx.addStyle(Type.DANGER.name(), null);
+            style.addAttribute(StyleConstants.Foreground, JBColor.RED.darker());
+            style.addAttribute(StyleConstants.Underline, false);
 
 			this.add(new JBScrollPane(this.area), BorderLayout.CENTER);
 			this.add(new JBScrollPane(this.inputArea), BorderLayout.SOUTH);
@@ -342,6 +354,7 @@ public class MattermostClientWindow {
 			}
 			text.append(EmojiUtils.emojify(StringEscapeUtils.unescapeHtml(StringEscapeUtils.unescapeJava(posted.getPost().getMessage()))).replace("\n", "\n" + (out ? "< " : "> "))).append("\n");
 
+            Type type = out ? Type.POSTED_SELF : Type.POSTED;
 			if (posted.getPost().getType().equals("slack_attachment")) {
 				Object att = posted.getPost().getProps().get("attachments");
 				System.out.println(att);
@@ -350,6 +363,11 @@ public class MattermostClientWindow {
 					for (Object o : attList) {
 						if (o instanceof Map) {
 							Map attMap = (Map) o;
+							String colorString = (String) attMap.get("color");
+							try {
+							    type = Type.valueOf(colorString.toUpperCase());
+                            } catch(IllegalArgumentException e){}
+
 							text.append("\u250F\n");
 							if (attMap.containsKey("text")) {
                                 text.append("\u2503 ").append(((String) attMap.get("text")).replace("\\n", "\n\u2503 "));
@@ -362,7 +380,7 @@ public class MattermostClientWindow {
 				}
 			}
 
-			write(text, this.area, out ? Type.POSTED_SELF : Type.POSTED);
+            write(text, this.area, type);
 			this.latestPostUserId = posted.getPost().getUserId();
 		}
 
