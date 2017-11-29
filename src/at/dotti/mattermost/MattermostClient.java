@@ -24,7 +24,7 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.java_websocket.WebSocketImpl;
 import org.java_websocket.client.WebSocketClient;
-import org.java_websocket.drafts.Draft_17;
+import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.handshake.ServerHandshake;
 
 import javax.net.ssl.KeyManagerFactory;
@@ -332,7 +332,7 @@ public class MattermostClient {
         WebSocketImpl.DEBUG = false;
 
         CountDownLatch connectionOpenLatch = new CountDownLatch(1);
-        WebSocketClient ws = new WebSocketClient(wss(WEBSOCKET_URL), new Draft_17()) {
+        WebSocketClient ws = new WebSocketClient(wss(WEBSOCKET_URL), new Draft_6455()) {
             @Override
             public void onOpen(ServerHandshake serverHandshake) {
                 System.out.println(serverHandshake.getHttpStatusMessage());
