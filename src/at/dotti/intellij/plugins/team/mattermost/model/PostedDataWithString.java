@@ -10,7 +10,7 @@ public class PostedDataWithString {
 
 	private String channelType;
 
-	private List<String> mentions;
+	private String mentions;
 
 	private String post;
 
@@ -42,11 +42,11 @@ public class PostedDataWithString {
 		this.channelType = channelType;
 	}
 
-	public List<String> getMentions() {
+	public String getMentions() {
 		return mentions;
 	}
 
-	public void setMentions(List<String> mentions) {
+	public void setMentions(String mentions) {
 		this.mentions = mentions;
 	}
 

@@ -9,9 +9,7 @@ import com.google.gson.JsonSyntaxException;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
-import com.intellij.ui.NotificationBalloonShadowBorderProvider;
 import com.intellij.ui.SortedListModel;
-import groovy.json.JsonOutput;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -387,7 +385,7 @@ public class MattermostClient {
                         Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create();
                         switch (event) {
                             case "status_change":
-                                balloonCallback.accept("status changed: " + JsonOutput.toJson(data));
+                                balloonCallback.accept("status changed: " + data);
                                 break;
                             case "typing":
                                 Typing typing = gson.fromJson(s, Typing.class);
@@ -405,7 +403,7 @@ public class MattermostClient {
                                     pd.setChannelDisplayName(posted.getData().getChannelDisplayName());
                                     pd.setChannelName(posted.getData().getChannelName());
                                     pd.setChannelType(posted.getData().getChannelType());
-                                    pd.setMentions(posted.getData().getMentions());
+                                    pd.setMentions(gson.fromJson(posted.getData().getMentions(), List.class));
                                     pd.setPost(post);
                                     pd.setSenderName(posted.getData().getSenderName());
                                     pd.setTeamId(posted.getData().getTeamId());
