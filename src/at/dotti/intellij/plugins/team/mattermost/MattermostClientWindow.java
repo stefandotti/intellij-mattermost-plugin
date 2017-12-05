@@ -38,10 +38,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.List;
 import java.util.Timer;
-import java.util.TimerTask;
 
 public class MattermostClientWindow {
 
@@ -346,6 +345,10 @@ public class MattermostClientWindow {
             this.channelId = posted.getPost().getChannelId();
             Instant i = Instant.ofEpochMilli(posted.getPost().getCreateAt());
             LocalDateTime createdAt = LocalDateTime.from(i.atZone(ZoneId.of("Europe/Vienna")));
+
+            List<String> texts = new ArrayList<>();
+            List<Style> styles = new ArrayList<>();
+
             StringBuilder text = new StringBuilder();
             boolean out = client.getUser().getId().equals(posted.getPost().getUserId());
             if (this.latestPostUserId == null || !this.latestPostUserId.equals(posted.getPost().getUserId())) {
@@ -355,6 +358,11 @@ public class MattermostClientWindow {
             text.append(EmojiUtils.emojify(StringEscapeUtils.unescapeHtml(StringEscapeUtils.unescapeJava(posted.getPost().getMessage()))).replace("\n", "\n" + (out ? "< " : "> "))).append("\n");
 
             Type type = out ? Type.POSTED_SELF : Type.POSTED;
+            Style defaultStyle = doc.getStyle(type.name());
+
+            texts.add(text.toString());
+            styles.add(defaultStyle);
+
             JBColor color = null;
             if (posted.getPost().getType().equals("slack_attachment")) {
                 Object att = posted.getPost().getProps().get("attachments");
@@ -375,45 +383,58 @@ public class MattermostClientWindow {
                                 }
                             }
 
-                            text.append("\u250F\n");
+                            Style style = defaultStyle;
+                            if (color != null) {
+                                String styleName = type.name() + "_" + color.getRGB();
+                                if (doc.getStyle(styleName) == null) {
+                                    style = doc.addStyle(styleName, null);
+                                    style.addAttributes(defaultStyle.copyAttributes());
+                                    style.addAttribute(StyleConstants.Foreground, color);
+                                } else {
+                                    style = doc.getStyle(styleName);
+                                }
+                            }
+
+                            texts.add("\u250F\n");
+                            styles.add(style);
                             String message;
                             if (attMap.containsKey("text") && !attMap.get("text").toString().isEmpty()) {
                                 message = (String) attMap.get("text");
                             } else {
                                 message = (String) attMap.get("fallback");
                             }
-                            text.append("\u2503 ").append(message.trim().replace("\n", "\n\u2503 "));
-                            text.append("\n\u2517");
+                            message = message.trim();
+                            String[] lines = message.split("\\n");
+                            for (int l = 0; l != lines.length; ++l) {
+                                texts.add("\u2503 ");
+                                styles.add(style);
+                                texts.add(lines[l] + "\n");
+                                styles.add(defaultStyle);
+                            }
+                            texts.add("\u2517\n");
+                            styles.add(style);
                         }
                     }
                 }
             }
 
-            write(text, this.area, type, color);
+            write(texts, styles, this.area, type, color);
             this.latestPostUserId = posted.getPost().getUserId();
         }
 
-        private void write(StringBuilder text, JTextPane area, Type type, JBColor color) {
+        private void write(List<String> text, List<Style> styles, JTextPane area, Type type, JBColor color) {
             SwingUtilities.invokeLater(() -> {
                 DefaultStyledDocument doc = (DefaultStyledDocument) area.getDocument();
                 int offset = doc.getLength();
-                try {
-                    doc.insertString(offset, text.toString(), null);
-                } catch (BadLocationException e) {
-                    UIManager.getLookAndFeel().provideErrorFeedback(area);
-                }
-                String styleName = type.name();
-                Style style = doc.getStyle(styleName);
-                if (color != null) {
-                    styleName = type.name() + "_" + color.getRGB();
-                    if (doc.getStyle(styleName) == null) {
-                        style.addAttribute(StyleConstants.Foreground, color);
-                        doc.addStyle(styleName, style);
-                    } else {
-                        style = doc.getStyle(styleName);
+                for (int i = 0; i != text.size(); ++i) {
+                    try {
+                        doc.insertString(offset, text.get(i), null);
+                    } catch (BadLocationException e) {
+                        UIManager.getLookAndFeel().provideErrorFeedback(area);
                     }
+                    doc.setCharacterAttributes(offset, text.get(i).length(), styles.get(i), false);
+                    offset += text.get(i).length();
                 }
-                doc.setParagraphAttributes(offset, text.length(), style, true);
                 SwingUtilities.invokeLater(() -> {
                     area.setCaretPosition(doc.getLength() - 1);
                     try {
@@ -421,7 +442,6 @@ public class MattermostClientWindow {
                     } catch (BadLocationException e) {
                     }
                 });
-
                 if (this.origColor == null) {
                     this.origColor = area.getBackground();
                 }
